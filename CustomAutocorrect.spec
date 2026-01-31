@@ -35,7 +35,7 @@ hiddenimports = [
 ]
 
 a = Analysis(
-    ['src/custom_autocorrect/main.py'],
+    ['run.py'],
     pathex=[],
     binaries=[],
     datas=datas,
