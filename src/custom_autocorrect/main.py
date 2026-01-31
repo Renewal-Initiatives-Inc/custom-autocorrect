@@ -1,16 +1,20 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 7: Captures keystrokes, matches words against rules, performs corrections,
-logs corrections to a rolling log file, skips password fields, and tracks
-correction patterns from backspace behavior.
+Phase 8: Captures keystrokes, matches words against rules, performs corrections,
+logs corrections to a rolling log file, skips password fields, tracks
+correction patterns from backspace behavior, and provides system tray integration.
 
-This module provides the application entry point that will be expanded
-in later phases to include:
-- System tray integration (Phase 8)
+Features:
+- Real-time keystroke monitoring and autocorrection
+- Password field detection to avoid corrections in sensitive contexts
+- Hot reload of rules.txt without restart
+- Pattern detection for learning new corrections
+- System tray icon with menu for quick access
 """
 
 import logging
 import sys
+import threading
 from typing import Optional
 
 from .correction import CorrectionEngine, apply_casing
@@ -20,11 +24,13 @@ from .password_detect import is_password_field
 from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
 from .rules import RuleFileWatcher, RuleMatcher, Rule
 from .suggestions import CorrectionPatternTracker
+from .tray import SystemTray
 
 # Global instances for the word detection callback
 _matcher: Optional[RuleMatcher] = None
 _correction_engine: Optional[CorrectionEngine] = None
 _pattern_tracker: Optional[CorrectionPatternTracker] = None
+_tray: Optional[SystemTray] = None
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -113,7 +119,7 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
-    global _matcher, _correction_engine, _pattern_tracker
+    global _matcher, _correction_engine, _pattern_tracker, _tray
 
     # Check for debug flag
     debug = "--debug" in sys.argv or "-d" in sys.argv
@@ -121,7 +127,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.6.0 - Phase 7")
+    print("Custom Autocorrect v0.8.0 - Phase 8")
     print("=" * 50)
     print()
 
@@ -162,10 +168,29 @@ def main() -> int:
     # Phase 4: Initialize correction engine
     _correction_engine = CorrectionEngine(delay_ms=0)
 
+    # Phase 8: Create shutdown event for clean exit
+    shutdown_event = threading.Event()
+
+    # Phase 8: Initialize system tray
+    try:
+        _tray = SystemTray(
+            pattern_tracker=_pattern_tracker,
+            on_exit=shutdown_event.set,
+        )
+        _tray.start()
+        print("System tray icon active - right-click for options")
+    except ImportError as e:
+        print(f"Warning: System tray unavailable: {e}")
+        _tray = None
+
+    print()
     print("Monitoring keystrokes...")
     print("Corrections are now ACTIVE - typos will be replaced automatically.")
     print()
-    print("Press Ctrl+C to exit.")
+    if _tray:
+        print("Use the system tray icon to exit, or press Ctrl+C.")
+    else:
+        print("Press Ctrl+C to exit.")
     print("-" * 50)
 
     # Start file watcher for hot reload
@@ -181,11 +206,9 @@ def main() -> int:
         engine.start()
         logger.info("Keystroke engine started successfully")
 
-        # Keep the main thread alive
-        # The keyboard library runs its own event loop
-        import keyboard
-
-        keyboard.wait()  # Block forever until Ctrl+C
+        # Wait for shutdown signal (from tray Exit or Ctrl+C)
+        while not shutdown_event.is_set():
+            shutdown_event.wait(timeout=1.0)
 
     except ImportError as e:
         print(f"\nError: {e}")
@@ -202,13 +225,16 @@ def main() -> int:
 
     except KeyboardInterrupt:
         print("\n")
-        logger.info("Received shutdown signal")
+        logger.info("Received shutdown signal (Ctrl+C)")
 
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
         return 1
 
     finally:
+        # Clean shutdown sequence
+        if _tray:
+            _tray.stop()
         watcher.stop()
         engine.stop()
         if _correction_engine:
