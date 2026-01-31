@@ -58,3 +58,4 @@ Documents/CustomAutocorrect/
 
 # Generated icon (regenerate with create_icon.py)
 # resources/icon.png
+.hypothesis/
