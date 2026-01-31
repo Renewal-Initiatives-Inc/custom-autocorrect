@@ -207,3 +207,174 @@ class TestCasingPreservation:
         engine.simulate_key("space")
 
         assert words == [text]
+
+
+# Strategy for generating valid rule typos (no =, no #, no whitespace-only)
+rule_typo = st.text(
+    alphabet=st.characters(
+        whitelist_categories=["Lu", "Ll", "Nd"],
+        min_codepoint=65,  # Start from 'A'
+        max_codepoint=122,  # End at 'z'
+    ),
+    min_size=1,
+    max_size=20,
+).filter(lambda s: "=" not in s and not s.startswith("#") and s.strip() == s)
+
+# Strategy for generating valid corrections
+rule_correction = st.text(
+    alphabet=st.characters(
+        whitelist_categories=["Lu", "Ll", "Nd"],
+        min_codepoint=65,
+        max_codepoint=122,
+    ),
+    min_size=1,
+    max_size=50,
+).filter(lambda s: s.strip() == s)
+
+
+class TestRuleIntegrityProperty:
+    """Property-based tests for CP1: Rule Integrity.
+
+    For any correction that occurs, the trigger must exactly match
+    a key in rules.txt (case-insensitive matching).
+    """
+
+    @given(rule_typo, rule_correction)
+    def test_match_only_if_rule_exists(self, typo: str, correction: str):
+        """Matcher only returns rule if it was loaded."""
+        from custom_autocorrect.rules import RuleMatcher
+
+        assume(typo.lower() != correction.lower())  # Valid rule
+
+        matcher = RuleMatcher()
+        # Don't load any rules
+
+        # Should not match anything
+        assert matcher.match(typo) is None
+
+    @given(rule_typo, rule_correction)
+    @settings(max_examples=50)
+    def test_match_returns_exact_loaded_rule(self, typo: str, correction: str):
+        """Match returns the exact rule that was loaded."""
+        import tempfile
+        from pathlib import Path
+        from custom_autocorrect.rules import RuleMatcher
+
+        assume(typo.lower() != correction.lower())
+
+        # Create temporary rules file
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(f"{typo}={correction}\n")
+            path = Path(f.name)
+
+        try:
+            matcher = RuleMatcher(rules_path=path)
+            matcher.load()
+
+            # Match should return exactly what we put in
+            rule = matcher.match(typo)
+            assert rule is not None
+            assert rule.correction == correction
+        finally:
+            path.unlink()
+
+    @given(st.lists(st.tuples(rule_typo, rule_correction), min_size=1, max_size=10))
+    @settings(max_examples=30)
+    def test_all_loaded_rules_match(self, rules: list):
+        """All loaded rules should be matchable."""
+        import tempfile
+        from pathlib import Path
+        from custom_autocorrect.rules import RuleMatcher
+
+        # Filter to valid rules (typo != correction) and unique typos
+        seen_typos = set()
+        valid_rules = []
+        for t, c in rules:
+            if t.lower() != c.lower() and t.lower() not in seen_typos:
+                valid_rules.append((t, c))
+                seen_typos.add(t.lower())
+
+        assume(len(valid_rules) > 0)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            for typo, correction in valid_rules:
+                f.write(f"{typo}={correction}\n")
+            path = Path(f.name)
+
+        try:
+            matcher = RuleMatcher(rules_path=path)
+            matcher.load()
+
+            for typo, _ in valid_rules:
+                assert matcher.match(typo) is not None
+        finally:
+            path.unlink()
+
+    @given(rule_typo)
+    def test_non_existent_rule_never_matches(self, word: str):
+        """Words without rules should never match."""
+        import tempfile
+        from pathlib import Path
+        from custom_autocorrect.rules import RuleMatcher
+
+        # Create a rules file WITHOUT this word
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            f.write("teh=the\nadn=and\n")
+            path = Path(f.name)
+
+        try:
+            matcher = RuleMatcher(rules_path=path)
+            matcher.load()
+
+            # If word is not one of our rules, it shouldn't match
+            if word.lower() not in ["teh", "adn"]:
+                assert matcher.match(word) is None
+        finally:
+            path.unlink()
+
+
+class TestWholeWordProperty:
+    """Property-based tests for CP2: Whole-Word Guarantee.
+
+    Note: This is already satisfied by KeystrokeEngine's word extraction.
+    The RuleMatcher only sees complete words, never substrings.
+    These tests verify the integration works correctly.
+    """
+
+    @given(word_text)
+    def test_engine_emits_complete_words_only(self, text: str):
+        """Engine emits the complete word, not substrings."""
+        words = []
+        engine = KeystrokeEngine(on_word_complete=words.append)
+
+        for char in text:
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        # The only word emitted is the complete word
+        assert words == [text]
+
+    @given(word_text, word_text)
+    def test_typing_without_space_does_not_emit(self, prefix: str, suffix: str):
+        """Typing without space should not emit any words."""
+        words = []
+        engine = KeystrokeEngine(on_word_complete=words.append)
+
+        # Type prefix + suffix without any space
+        for char in prefix + suffix:
+            engine.simulate_key(char)
+
+        # No words should be emitted yet
+        assert words == []
+
+        # Now press space
+        engine.simulate_key("space")
+
+        # Now we should get the complete word
+        assert words == [prefix + suffix]

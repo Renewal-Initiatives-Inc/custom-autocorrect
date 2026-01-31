@@ -1,10 +1,9 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 2 Demo: Captures keystrokes and prints completed words to console.
+Phase 3: Captures keystrokes, matches words against rules, logs potential corrections.
 
 This module provides the application entry point that will be expanded
 in later phases to include:
-- Rule loading and matching (Phase 3)
 - Correction engine (Phase 4)
 - Correction logging (Phase 5)
 - Password field protection (Phase 6)
@@ -13,8 +12,14 @@ in later phases to include:
 
 import logging
 import sys
+from typing import Optional
 
 from .keystroke_engine import KeystrokeEngine
+from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
+from .rules import RuleFileWatcher, RuleMatcher, Rule
+
+# Global matcher for the word detection callback
+_matcher: Optional[RuleMatcher] = None
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -34,15 +39,28 @@ def setup_logging(debug: bool = False) -> None:
 def on_word_detected(word: str) -> None:
     """Callback when a word is completed (space pressed).
 
-    In Phase 2, this just prints the word. In later phases, this will:
-    - Check against correction rules (Phase 3)
-    - Apply corrections (Phase 4)
-    - Track for suggestions (Phase 7)
+    Phase 3: Check against correction rules and log matches.
+    Phase 4: Will actually perform the correction.
 
     Args:
         word: The completed word (without trailing space).
     """
-    print(f"Word detected: '{word}'")
+    global _matcher
+
+    if _matcher is None:
+        return
+
+    rule = _matcher.match(word)
+
+    if rule:
+        # Phase 3: Log that we would correct (actual correction in Phase 4)
+        print(f"Would correct: '{word}' -> '{rule.correction}'")
+        logging.getLogger(__name__).info(
+            f"Match found: '{word}' -> '{rule.correction}' (rule: {rule.original_typo})"
+        )
+    else:
+        # Debug logging for non-matches
+        logging.getLogger(__name__).debug(f"No rule match for: '{word}'")
 
 
 def main() -> int:
@@ -51,26 +69,54 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
+    global _matcher
+
     # Check for debug flag
     debug = "--debug" in sys.argv or "-d" in sys.argv
 
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.1.0 - Phase 2 Demo")
+    print("Custom Autocorrect v0.2.0 - Phase 3")
     print("=" * 50)
     print()
-    print("This demo captures keystrokes and prints completed words.")
-    print("Type words in any application and press SPACE to see them here.")
+
+    # Phase 3: Set up app folder and rules
+    try:
+        ensure_app_folder()
+        ensure_rules_file()
+    except OSError as e:
+        print(f"Error: Failed to create app folder: {e}")
+        return 1
+
+    # Load rules
+    _matcher = RuleMatcher()
+    rule_count = _matcher.load()
+
+    rules_path = _matcher.rules_path
+    print(f"Rules file: {rules_path}")
+    print(f"Loaded {rule_count} correction rule(s)")
     print()
-    print("Keys handled:")
-    print("  - Letters/numbers: Added to word buffer")
-    print("  - Space: Completes word and prints it")
-    print("  - Backspace: Removes last character")
-    print("  - Enter/Tab/Escape/Arrows: Clears buffer")
+
+    # Report any parse errors
+    for error in _matcher.get_parse_errors():
+        print(f"  Warning: Line {error.line_number}: {error.reason}")
+        print(f"           {error.line}")
+
+    if rule_count == 0:
+        print("Tip: Add rules to rules.txt in format: typo=correction")
+        print("     Example: teh=the")
+    print()
+
+    print("Monitoring keystrokes...")
+    print("Type a word that matches a rule + SPACE to see it detected.")
     print()
     print("Press Ctrl+C to exit.")
     print("-" * 50)
+
+    # Start file watcher for hot reload
+    watcher = RuleFileWatcher(_matcher)
+    watcher.start()
 
     engine = KeystrokeEngine(on_word_complete=on_word_detected)
 
@@ -106,6 +152,7 @@ def main() -> int:
         return 1
 
     finally:
+        watcher.stop()
         engine.stop()
         print("Custom Autocorrect stopped. Goodbye!")
 
