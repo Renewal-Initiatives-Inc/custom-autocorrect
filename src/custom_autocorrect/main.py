@@ -1,8 +1,9 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 8: Captures keystrokes, matches words against rules, performs corrections,
+Phase 9: Captures keystrokes, matches words against rules, performs corrections,
 logs corrections to a rolling log file, skips password fields, tracks
-correction patterns from backspace behavior, and provides system tray integration.
+correction patterns from backspace behavior, provides system tray integration,
+and supports adding rules via Win+Shift+A hotkey.
 
 Features:
 - Real-time keystroke monitoring and autocorrection
@@ -10,6 +11,7 @@ Features:
 - Hot reload of rules.txt without restart
 - Pattern detection for learning new corrections
 - System tray icon with menu for quick access
+- Win+Shift+A hotkey for adding new rules
 """
 
 import logging
@@ -19,6 +21,7 @@ from typing import Optional
 
 from .correction import CorrectionEngine, apply_casing
 from .correction_log import log_correction
+from .hotkey import AddRuleHotkey
 from .keystroke_engine import KeystrokeEngine
 from .password_detect import is_password_field
 from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
@@ -31,6 +34,7 @@ _matcher: Optional[RuleMatcher] = None
 _correction_engine: Optional[CorrectionEngine] = None
 _pattern_tracker: Optional[CorrectionPatternTracker] = None
 _tray: Optional[SystemTray] = None
+_hotkey: Optional[AddRuleHotkey] = None
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -119,7 +123,7 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
-    global _matcher, _correction_engine, _pattern_tracker, _tray
+    global _matcher, _correction_engine, _pattern_tracker, _tray, _hotkey
 
     # Check for debug flag
     debug = "--debug" in sys.argv or "-d" in sys.argv
@@ -127,7 +131,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.8.0 - Phase 8")
+    print("Custom Autocorrect v0.9.0 - Phase 9")
     print("=" * 50)
     print()
 
@@ -183,6 +187,19 @@ def main() -> int:
         print(f"Warning: System tray unavailable: {e}")
         _tray = None
 
+    # Phase 9: Initialize add-rule hotkey
+    def on_rule_added(typo: str, correction: str) -> None:
+        """Callback when a rule is added via hotkey."""
+        logger.info(f"Rule added via hotkey: {typo} -> {correction}")
+
+    try:
+        _hotkey = AddRuleHotkey(on_rule_added=on_rule_added)
+        _hotkey.register()
+        print("Hotkey active: Win+Shift+A to add new rules")
+    except ImportError as e:
+        print(f"Warning: Hotkey unavailable: {e}")
+        _hotkey = None
+
     print()
     print("Monitoring keystrokes...")
     print("Corrections are now ACTIVE - typos will be replaced automatically.")
@@ -233,6 +250,8 @@ def main() -> int:
 
     finally:
         # Clean shutdown sequence
+        if _hotkey:
+            _hotkey.unregister()
         if _tray:
             _tray.stop()
         watcher.stop()
