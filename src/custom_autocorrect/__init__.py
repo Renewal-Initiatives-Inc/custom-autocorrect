@@ -5,7 +5,7 @@ based on user-defined rules. The app monitors keystrokes system-wide, performs
 corrections via backspace+retype, and passively tracks potential typos for user review.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 __author__ = "Jeff Takle"
 
 from .word_buffer import WordBuffer
@@ -25,6 +25,12 @@ from .correction_log import (
     MAX_LOG_ENTRIES,
 )
 from .password_detect import is_password_field, reset_uia_cache
+from .suggestions import (
+    CorrectionPatternTracker,
+    IgnoreList,
+    SuggestionsFile,
+    SUGGESTION_THRESHOLD,
+)
 
 __all__ = [
     "WordBuffer",
@@ -44,4 +50,8 @@ __all__ = [
     "MAX_LOG_ENTRIES",
     "is_password_field",
     "reset_uia_cache",
+    "CorrectionPatternTracker",
+    "IgnoreList",
+    "SuggestionsFile",
+    "SUGGESTION_THRESHOLD",
 ]

@@ -687,3 +687,323 @@ class TestPasswordFieldSafetyCP7:
             # Should return False (not True which would block corrections)
             result = is_password_field()
             assert result is False
+
+
+class TestCorrectionPatternThresholdCP4:
+    """Property-based tests for CP4: Correction Pattern Threshold.
+
+    For any pattern appearing in suggestions.txt, that pattern must represent
+    a word the user typed, deleted via backspace, and replaced with a different
+    word, at least SUGGESTION_THRESHOLD times.
+    """
+
+    @given(word_text, word_text, st.integers(min_value=1, max_value=4))
+    def test_pattern_not_suggested_before_threshold(self, w1: str, w2: str, count: int):
+        """CP4: Patterns below threshold should not be in suggestions."""
+        from custom_autocorrect.suggestions import (
+            CorrectionPatternTracker,
+            SuggestionsFile,
+            SUGGESTION_THRESHOLD,
+        )
+
+        assume(w1.lower() != w2.lower())  # Must be different words
+        assume(count < SUGGESTION_THRESHOLD)  # Below threshold
+
+        sf = SuggestionsFile()  # Memory-only
+        tracker = CorrectionPatternTracker(suggestions_file=sf, threshold=SUGGESTION_THRESHOLD)
+
+        # Record pattern count times (less than threshold)
+        for _ in range(count):
+            tracker.record_pattern(w1, w2)
+
+        # Should not be in suggestions
+        assert tracker.suggestion_count == 0
+
+    @given(word_text, word_text, st.integers(min_value=5, max_value=20))
+    @settings(max_examples=50)
+    def test_pattern_suggested_at_or_above_threshold(self, w1: str, w2: str, count: int):
+        """CP4: Patterns at or above threshold should be in suggestions."""
+        import tempfile
+        from pathlib import Path
+        from custom_autocorrect.suggestions import (
+            CorrectionPatternTracker,
+            SuggestionsFile,
+            SUGGESTION_THRESHOLD,
+        )
+
+        assume(w1.lower() != w2.lower())  # Must be different words
+        assume(count >= SUGGESTION_THRESHOLD)  # At or above threshold
+
+        # Need a temp file for suggestions to actually be written
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            path = Path(f.name)
+
+        try:
+            sf = SuggestionsFile(path=path)
+            tracker = CorrectionPatternTracker(suggestions_file=sf, threshold=SUGGESTION_THRESHOLD)
+
+            # Record pattern count times (at or above threshold)
+            for _ in range(count):
+                tracker.record_pattern(w1, w2)
+
+            # Should be in suggestions
+            assert tracker.suggestion_count == 1
+            suggestions = tracker.get_suggestions()
+            assert len(suggestions) == 1
+            assert suggestions[0][0] == w1.lower()
+            assert suggestions[0][1] == w2.lower()
+            assert suggestions[0][2] == count
+        finally:
+            path.unlink()
+
+    @given(word_text)
+    def test_same_word_never_tracked(self, word: str):
+        """CP4: Same word (case-insensitive) should never be tracked as a pattern."""
+        from custom_autocorrect.suggestions import CorrectionPatternTracker
+
+        tracker = CorrectionPatternTracker()
+
+        # Try recording same word with different casings
+        for _ in range(10):
+            result = tracker.record_pattern(word, word)
+            assert result is None
+
+        for _ in range(10):
+            result = tracker.record_pattern(word.lower(), word.upper())
+            assert result is None
+
+        for _ in range(10):
+            result = tracker.record_pattern(word.upper(), word.lower())
+            assert result is None
+
+    @given(word_text, word_text)
+    @settings(max_examples=50)
+    def test_ignored_patterns_never_suggested(self, w1: str, w2: str):
+        """CP4: Ignored patterns should never appear in suggestions."""
+        from custom_autocorrect.suggestions import (
+            CorrectionPatternTracker,
+            IgnoreList,
+            SuggestionsFile,
+        )
+
+        assume(w1.lower() != w2.lower())  # Must be different words
+
+        ignore_list = IgnoreList()
+        ignore_list.add(w1, w2)
+
+        sf = SuggestionsFile()
+        tracker = CorrectionPatternTracker(
+            ignore_list=ignore_list,
+            suggestions_file=sf,
+            threshold=1  # Low threshold to test quickly
+        )
+
+        # Try recording many times
+        for _ in range(20):
+            result = tracker.record_pattern(w1, w2)
+            assert result is None  # Should always be ignored
+
+        # Should never be in suggestions
+        assert tracker.suggestion_count == 0
+
+    @given(
+        st.lists(st.tuples(word_text, word_text), min_size=1, max_size=10),
+        st.integers(min_value=1, max_value=10)
+    )
+    @settings(max_examples=30)
+    def test_threshold_respected_for_multiple_patterns(
+        self, patterns: list, threshold: int
+    ):
+        """CP4: Threshold should be respected for all patterns."""
+        from custom_autocorrect.suggestions import (
+            CorrectionPatternTracker,
+            SuggestionsFile,
+        )
+
+        # Filter to valid patterns (different words) and deduplicate
+        seen = set()
+        valid_patterns = []
+        for w1, w2 in patterns:
+            key = (w1.lower(), w2.lower())
+            if w1.lower() != w2.lower() and key not in seen:
+                valid_patterns.append((w1, w2))
+                seen.add(key)
+
+        assume(len(valid_patterns) > 0)
+
+        sf = SuggestionsFile()
+        tracker = CorrectionPatternTracker(suggestions_file=sf, threshold=threshold)
+
+        # Record each pattern (threshold - 1) times
+        for w1, w2 in valid_patterns:
+            for _ in range(threshold - 1):
+                tracker.record_pattern(w1, w2)
+
+        # None should be suggested yet
+        assert tracker.suggestion_count == 0
+
+        # Now record each one more time (reaching threshold)
+        for w1, w2 in valid_patterns:
+            tracker.record_pattern(w1, w2)
+
+        # All should now be suggested
+        assert tracker.suggestion_count == len(valid_patterns)
+
+    @given(word_text, word_text, st.integers(min_value=5, max_value=15))
+    @settings(max_examples=30)
+    def test_suggestion_count_matches_recording_count(self, w1: str, w2: str, count: int):
+        """CP4: Recorded count should match count stored in suggestion."""
+        import tempfile
+        from pathlib import Path
+        from custom_autocorrect.suggestions import (
+            CorrectionPatternTracker,
+            SuggestionsFile,
+            SUGGESTION_THRESHOLD,
+        )
+
+        assume(w1.lower() != w2.lower())
+        assume(count >= SUGGESTION_THRESHOLD)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            path = Path(f.name)
+
+        try:
+            sf = SuggestionsFile(path=path)
+            tracker = CorrectionPatternTracker(suggestions_file=sf)
+
+            for _ in range(count):
+                tracker.record_pattern(w1, w2)
+
+            suggestions = tracker.get_suggestions()
+            assert len(suggestions) == 1
+            assert suggestions[0][2] == count  # Count matches
+        finally:
+            path.unlink()
+
+
+class TestBackspacePatternDetection:
+    """Property-based tests for backspace pattern detection in KeystrokeEngine."""
+
+    @given(word_text, word_text)
+    @settings(max_examples=50)
+    def test_erase_and_retype_different_word_triggers_pattern(self, w1: str, w2: str):
+        """Erasing a word and typing a different word should trigger pattern callback."""
+        assume(w1.lower() != w2.lower())  # Must be different words
+        assume(len(w1) <= 20 and len(w2) <= 20)  # Keep test fast
+
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type first word
+        for char in w1:
+            engine.simulate_key(char)
+
+        # Erase it completely
+        for _ in range(len(w1)):
+            engine.simulate_key("backspace")
+
+        # Type second word
+        for char in w2:
+            engine.simulate_key(char)
+
+        # Complete with space
+        engine.simulate_key("space")
+
+        assert patterns == [(w1, w2)]
+
+    @given(word_text)
+    @settings(max_examples=50)
+    def test_erase_and_retype_same_word_no_pattern(self, word: str):
+        """Erasing and retyping the same word should not trigger pattern callback."""
+        assume(len(word) <= 20)
+
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type word
+        for char in word:
+            engine.simulate_key(char)
+
+        # Erase completely
+        for _ in range(len(word)):
+            engine.simulate_key("backspace")
+
+        # Retype same word
+        for char in word:
+            engine.simulate_key(char)
+
+        # Complete
+        engine.simulate_key("space")
+
+        # No pattern should be detected (same word)
+        assert patterns == []
+
+    @given(word_text, st.sampled_from(["enter", "tab", "escape", "up", "down", "left", "right"]))
+    @settings(max_examples=50)
+    def test_clear_key_prevents_pattern_detection(self, word: str, clear_key: str):
+        """Clear keys between erase and retype should prevent pattern detection."""
+        assume(len(word) <= 20)
+
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type word
+        for char in word:
+            engine.simulate_key(char)
+
+        # Erase completely
+        for _ in range(len(word)):
+            engine.simulate_key("backspace")
+
+        # Press clear key
+        engine.simulate_key(clear_key)
+
+        # Type different word
+        for char in "different":
+            engine.simulate_key(char)
+
+        # Complete
+        engine.simulate_key("space")
+
+        # No pattern should be detected (clear key reset tracking)
+        assert patterns == []
+
+    @given(word_text, st.integers(min_value=1, max_value=10))
+    @settings(max_examples=50)
+    def test_partial_erase_no_pattern(self, word: str, keep_chars: int):
+        """Partial erase (not emptying buffer) should not set up pattern detection."""
+        assume(len(word) > keep_chars)  # Ensure we can do partial erase
+
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type word
+        for char in word:
+            engine.simulate_key(char)
+
+        # Partial erase (leave some chars)
+        erase_count = len(word) - keep_chars
+        for _ in range(erase_count):
+            engine.simulate_key("backspace")
+
+        # Type more
+        for char in "xyz":
+            engine.simulate_key(char)
+
+        # Complete
+        engine.simulate_key("space")
+
+        # No pattern should be detected (wasn't a full erase)
+        assert patterns == []

@@ -309,3 +309,314 @@ class TestKeystrokeEngineIntegration:
         engine.simulate_key("space")
 
         assert words == ["newword"]
+
+
+class TestCorrectionPatternDetection:
+    """Tests for Phase 7 correction pattern detection."""
+
+    def test_backspace_erase_then_retype_triggers_callback(self):
+        """Erasing word with backspace and typing new word should trigger callback."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type "teh"
+        for char in "teh":
+            engine.simulate_key(char)
+
+        # Backspace to erase completely
+        engine.simulate_key("backspace")
+        engine.simulate_key("backspace")
+        engine.simulate_key("backspace")
+
+        # Type "the"
+        for char in "the":
+            engine.simulate_key(char)
+
+        # Complete with space
+        engine.simulate_key("space")
+
+        assert patterns == [("teh", "the")]
+
+    def test_partial_backspace_no_callback(self):
+        """Partial backspace (not erasing whole word) should not trigger callback."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type "helllo"
+        for char in "helllo":
+            engine.simulate_key(char)
+
+        # Backspace twice (partial erase)
+        engine.simulate_key("backspace")
+        engine.simulate_key("backspace")
+
+        # Type "o" to fix
+        engine.simulate_key("o")
+
+        # Complete with space
+        engine.simulate_key("space")
+
+        # No pattern should be detected (this was just fixing a typo in-place)
+        assert patterns == []
+
+    def test_same_word_retyped_no_callback(self):
+        """Erasing and retyping same word should not trigger callback."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type "hello"
+        for char in "hello":
+            engine.simulate_key(char)
+
+        # Backspace to erase completely
+        for _ in range(5):
+            engine.simulate_key("backspace")
+
+        # Type "hello" again
+        for char in "hello":
+            engine.simulate_key(char)
+
+        # Complete with space
+        engine.simulate_key("space")
+
+        # No pattern (same word retyped)
+        assert patterns == []
+
+    def test_same_word_different_case_no_callback(self):
+        """Erasing and retyping same word with different case should not trigger callback."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type "Hello"
+        for char in "Hello":
+            engine.simulate_key(char)
+
+        # Backspace to erase completely
+        for _ in range(5):
+            engine.simulate_key("backspace")
+
+        # Type "HELLO"
+        for char in "HELLO":
+            engine.simulate_key(char)
+
+        # Complete with space
+        engine.simulate_key("space")
+
+        # No pattern (same word, just different case)
+        assert patterns == []
+
+    def test_clear_key_resets_tracking(self):
+        """Clear keys should reset erased word tracking."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type "teh"
+        for char in "teh":
+            engine.simulate_key(char)
+
+        # Backspace to erase completely
+        for _ in range(3):
+            engine.simulate_key("backspace")
+
+        # Press Enter (clear key)
+        engine.simulate_key("enter")
+
+        # Type "the"
+        for char in "the":
+            engine.simulate_key(char)
+
+        # Complete with space
+        engine.simulate_key("space")
+
+        # No pattern should be detected (enter reset the tracking)
+        assert patterns == []
+
+    def test_tab_resets_tracking(self):
+        """Tab should reset erased word tracking."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type and erase "teh"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+
+        # Press Tab
+        engine.simulate_key("tab")
+
+        # Type and complete "the"
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        assert patterns == []
+
+    def test_escape_resets_tracking(self):
+        """Escape should reset erased word tracking."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type and erase "teh"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+
+        # Press Escape
+        engine.simulate_key("escape")
+
+        # Type and complete "the"
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        assert patterns == []
+
+    def test_arrow_key_resets_tracking(self):
+        """Arrow keys should reset erased word tracking."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type and erase "teh"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+
+        # Press arrow key
+        engine.simulate_key("left")
+
+        # Type and complete "the"
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        assert patterns == []
+
+    def test_multiple_corrections_detected(self):
+        """Multiple correction patterns should be detected."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # First correction: teh -> the
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        # Second correction: adn -> and
+        for char in "adn":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+        for char in "and":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        assert patterns == [("teh", "the"), ("adn", "and")]
+
+    def test_callback_error_doesnt_crash(self):
+        """Errors in correction pattern callback should not crash the engine."""
+
+        def bad_callback(erased, replacement):
+            raise ValueError("Intentional test error")
+
+        engine = KeystrokeEngine(on_correction_pattern=bad_callback)
+
+        # Type and erase "teh"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+
+        # Type "the" and complete - should not raise
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        # Buffer should still be cleared properly
+        assert engine.buffer.is_empty()
+
+    def test_word_complete_callback_still_works(self):
+        """word complete callback should still fire after correction pattern."""
+        patterns = []
+        words = []
+        engine = KeystrokeEngine(
+            on_word_complete=words.append,
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type and erase "teh", then type "the"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        # Both callbacks should have fired
+        assert patterns == [("teh", "the")]
+        assert words == ["the"]
+
+    def test_no_callback_when_not_set(self):
+        """Engine should work without correction pattern callback."""
+        words = []
+        engine = KeystrokeEngine(on_word_complete=words.append)
+
+        # Type and erase "teh", then type "the"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        # Word complete should still work
+        assert words == ["the"]
+
+    def test_erased_word_cleared_after_space(self):
+        """Erased word should be cleared after space is pressed."""
+        patterns = []
+        engine = KeystrokeEngine(
+            on_correction_pattern=lambda e, r: patterns.append((e, r))
+        )
+
+        # Type and erase "teh", then type "the"
+        for char in "teh":
+            engine.simulate_key(char)
+        for _ in range(3):
+            engine.simulate_key("backspace")
+        for char in "the":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        # Now type another word - should NOT trigger pattern
+        for char in "cat":
+            engine.simulate_key(char)
+        engine.simulate_key("space")
+
+        assert patterns == [("teh", "the")]  # Only the first pattern

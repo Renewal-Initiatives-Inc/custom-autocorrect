@@ -1,7 +1,8 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 6: Captures keystrokes, matches words against rules, performs corrections,
-logs corrections to a rolling log file, and skips password fields.
+Phase 7: Captures keystrokes, matches words against rules, performs corrections,
+logs corrections to a rolling log file, skips password fields, and tracks
+correction patterns from backspace behavior.
 
 This module provides the application entry point that will be expanded
 in later phases to include:
@@ -18,10 +19,12 @@ from .keystroke_engine import KeystrokeEngine
 from .password_detect import is_password_field
 from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
 from .rules import RuleFileWatcher, RuleMatcher, Rule
+from .suggestions import CorrectionPatternTracker
 
 # Global instances for the word detection callback
 _matcher: Optional[RuleMatcher] = None
 _correction_engine: Optional[CorrectionEngine] = None
+_pattern_tracker: Optional[CorrectionPatternTracker] = None
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -36,6 +39,26 @@ def setup_logging(debug: bool = False) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def on_correction_pattern(erased: str, replacement: str) -> None:
+    """Callback when a correction pattern is detected.
+
+    Phase 7: Called when user erases a word via backspace and types
+    a different word. Records the pattern for potential suggestion.
+
+    Args:
+        erased: The word that was erased.
+        replacement: The word typed to replace it.
+    """
+    global _pattern_tracker
+
+    if _pattern_tracker:
+        count = _pattern_tracker.record_pattern(erased, replacement)
+        if count:
+            logging.getLogger(__name__).debug(
+                f"Pattern detected: '{erased}' -> '{replacement}' (count: {count})"
+            )
 
 
 def on_word_detected(word: str) -> None:
@@ -90,7 +113,7 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
-    global _matcher, _correction_engine
+    global _matcher, _correction_engine, _pattern_tracker
 
     # Check for debug flag
     debug = "--debug" in sys.argv or "-d" in sys.argv
@@ -98,7 +121,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.5.0 - Phase 6")
+    print("Custom Autocorrect v0.6.0 - Phase 7")
     print("=" * 50)
     print()
 
@@ -129,6 +152,13 @@ def main() -> int:
         print("     Example: teh=the")
     print()
 
+    # Phase 7: Initialize pattern tracker
+    _pattern_tracker = CorrectionPatternTracker.create_default()
+    pattern_stats = _pattern_tracker.load()
+    print(f"Suggestions: {pattern_stats.get('suggestions', 0)} pending")
+    print(f"Ignored patterns: {pattern_stats.get('ignored', 0)}")
+    print()
+
     # Phase 4: Initialize correction engine
     _correction_engine = CorrectionEngine(delay_ms=0)
 
@@ -142,7 +172,10 @@ def main() -> int:
     watcher = RuleFileWatcher(_matcher)
     watcher.start()
 
-    engine = KeystrokeEngine(on_word_complete=on_word_detected)
+    engine = KeystrokeEngine(
+        on_word_complete=on_word_detected,
+        on_correction_pattern=on_correction_pattern,
+    )
 
     try:
         engine.start()
@@ -180,6 +213,9 @@ def main() -> int:
         engine.stop()
         if _correction_engine:
             print(f"Total corrections made: {_correction_engine.correction_count}")
+        if _pattern_tracker and _pattern_tracker.suggestion_count > 0:
+            print(f"Pending suggestions: {_pattern_tracker.suggestion_count}")
+            print("  Review suggestions.txt to enable new corrections")
         print("Custom Autocorrect stopped. Goodbye!")
 
     return 0

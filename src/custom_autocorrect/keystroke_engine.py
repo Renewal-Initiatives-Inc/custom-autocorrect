@@ -5,8 +5,10 @@ This module provides the KeystrokeEngine class that:
 - Maintains a word buffer that accumulates characters
 - Detects word boundaries when space is pressed
 - Handles backspace and special keys appropriately
+- Detects correction patterns (Phase 7): when user erases a word and types a replacement
 
 Phase 2 Implementation for Custom Autocorrect.
+Phase 7: Added correction pattern detection via backspace tracking.
 """
 
 import logging
@@ -22,6 +24,10 @@ class KeystrokeEngine:
 
     Emits completed words when space is pressed. The engine uses a callback
     pattern to notify listeners when a word is completed.
+
+    Phase 7: Also detects correction patterns. When a user erases a complete
+    word via backspace and types a different word, this triggers the
+    on_correction_pattern callback with (erased_word, replacement_word).
 
     Attributes:
         BUFFER_CLEAR_KEYS: Set of key names that clear the word buffer.
@@ -62,18 +68,27 @@ class KeystrokeEngine:
     }
 
     def __init__(
-        self, on_word_complete: Optional[Callable[[str], None]] = None
+        self,
+        on_word_complete: Optional[Callable[[str], None]] = None,
+        on_correction_pattern: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         """Initialize the keystroke engine.
 
         Args:
             on_word_complete: Callback invoked with the word when space is pressed.
                               The word does NOT include the trailing space.
+            on_correction_pattern: Callback invoked when a correction pattern is
+                              detected, i.e., when user erases a word via backspace
+                              and types a different word. Called with (erased, replacement).
         """
         self._buffer = WordBuffer()
         self._on_word_complete = on_word_complete or (lambda w: None)
+        self._on_correction_pattern = on_correction_pattern
         self._running = False
         self._hook = None
+        # Phase 7: Track word that was erased by backspaces
+        self._erased_word: str = ""
+        self._fully_erased: bool = False  # True only when buffer was completely emptied
 
     @property
     def buffer(self) -> WordBuffer:
@@ -123,6 +138,9 @@ class KeystrokeEngine:
 
         self._running = False
         self._buffer.clear()
+        # Phase 7: Clear erased word tracking
+        self._erased_word = ""
+        self._fully_erased = False
         logger.info("Stopped keystroke capture")
 
     def _on_key_event(self, event) -> None:
@@ -165,11 +183,30 @@ class KeystrokeEngine:
             logger.debug(f"Buffer: {self._buffer.get_word()!r}")
 
     def _handle_space(self) -> None:
-        """Handle space key: extract word, invoke callback, clear buffer."""
+        """Handle space key: extract word, invoke callback, clear buffer.
+
+        Phase 7: Also checks for correction pattern - if there was an erased word
+        that was FULLY deleted (buffer emptied) and the new word is different,
+        trigger the correction pattern callback.
+        """
         word = self._buffer.get_word()
         self._buffer.clear()
 
         if word:
+            # Phase 7: Check for correction pattern before word complete callback
+            # Only trigger if word was FULLY erased (not just partially backspaced)
+            if (self._fully_erased and self._erased_word and
+                    self._erased_word.lower() != word.lower()):
+                if self._on_correction_pattern:
+                    try:
+                        self._on_correction_pattern(self._erased_word, word)
+                    except Exception as e:
+                        logger.error(f"Error in correction pattern callback: {e}")
+
+            # Clear erased word tracking after processing
+            self._erased_word = ""
+            self._fully_erased = False
+
             logger.debug(f"Word completed: {word!r}")
             try:
                 self._on_word_complete(word)
@@ -177,15 +214,39 @@ class KeystrokeEngine:
                 logger.error(f"Error in word complete callback: {e}")
 
     def _handle_backspace(self) -> None:
-        """Handle backspace: remove last character from buffer."""
+        """Handle backspace: remove last character from buffer.
+
+        Phase 7: Track the word being erased. When user starts erasing (first
+        backspace on a non-empty buffer with no prior erased word), save the
+        current word. When buffer becomes empty, mark as fully erased.
+        """
+        # Phase 7: Capture the word when erasing STARTS (not when it ends)
+        # Only save if we haven't already started tracking an erase sequence
+        if not self._erased_word and not self._buffer.is_empty():
+            self._erased_word = self._buffer.get_word()
+            logger.debug(f"Started erasing word: {self._erased_word!r}")
+
         self._buffer.remove_last()
+
+        # Phase 7: Mark as fully erased when buffer becomes empty
+        if self._buffer.is_empty() and self._erased_word:
+            self._fully_erased = True
+            logger.debug(f"Word fully erased: {self._erased_word!r}")
+
         logger.debug(f"Backspace - Buffer: {self._buffer.get_word()!r}")
 
     def _handle_clear_key(self) -> None:
-        """Handle keys that reset the buffer (word boundary)."""
+        """Handle keys that reset the buffer (word boundary).
+
+        Phase 7: Also clears erased word tracking since the user is navigating
+        away from the current context.
+        """
         if not self._buffer.is_empty():
             logger.debug(f"Buffer cleared (was: {self._buffer.get_word()!r})")
             self._buffer.clear()
+        # Phase 7: Clear erased word tracking on clear keys
+        self._erased_word = ""
+        self._fully_erased = False
 
     def simulate_key(self, key_name: str, event_type: str = "down") -> None:
         """Simulate a key event for testing purposes.
