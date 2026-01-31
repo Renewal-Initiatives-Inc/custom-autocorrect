@@ -391,6 +391,18 @@ alpha_text = st.text(
     max_size=20,
 ).filter(lambda s: s.isalpha())
 
+# Strategy for multi-character alphabetic strings (needed for capitalized tests)
+# Single chars like "A" are ambiguous - uppercase and capitalized look the same
+alpha_text_multi = st.text(
+    alphabet=st.characters(
+        whitelist_categories=["Lu", "Ll"],
+        min_codepoint=65,
+        max_codepoint=122,
+    ),
+    min_size=2,  # At least 2 chars to distinguish capitalized from uppercase
+    max_size=20,
+).filter(lambda s: s.isalpha())
+
 
 class TestCasingPreservationCP3:
     """Property-based tests for CP3: Casing Preservation.
@@ -421,9 +433,13 @@ class TestCasingPreservationCP3:
 
         assert result == result.upper(), f"Expected uppercase output for '{upper_original}' -> '{correction}'"
 
-    @given(alpha_text, alpha_text)
+    @given(alpha_text_multi, alpha_text)
     def test_capitalized_input_produces_capitalized_output(self, original: str, correction: str):
-        """CP3: capitalized input produces capitalized output."""
+        """CP3: capitalized input produces capitalized output.
+
+        Note: Uses alpha_text_multi (2+ chars) because single uppercase letters
+        like "A" are ambiguous - they look the same capitalized or uppercase.
+        """
         from custom_autocorrect.correction import apply_casing
 
         cap_original = original.capitalize()
@@ -432,9 +448,13 @@ class TestCasingPreservationCP3:
         # Capitalize means first letter upper, rest lower
         assert result == result.capitalize(), f"Expected capitalized output for '{cap_original}' -> '{correction}'"
 
-    @given(alpha_text, alpha_text)
+    @given(alpha_text_multi, alpha_text_multi)
     def test_detect_casing_pattern_consistent(self, word1: str, word2: str):
-        """detect_casing_pattern is consistent for same casing."""
+        """detect_casing_pattern is consistent for same casing.
+
+        Note: Uses alpha_text_multi (2+ chars) because single uppercase letters
+        like "A" are detected as "uppercase", not "capitalized".
+        """
         from custom_autocorrect.correction import detect_casing_pattern
 
         # Same casing pattern should produce same result
