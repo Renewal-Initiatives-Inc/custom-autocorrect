@@ -19,9 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .paths import get_rules_path
+from .paths import get_rules_path, get_app_folder
 
 logger = logging.getLogger(__name__)
+
+# Backup file name
+RULES_BACKUP_NAME = "rules.txt.bak"
 
 
 @dataclass(frozen=True)
@@ -330,7 +333,11 @@ class RuleFileWatcher:
         """Background thread that polls for file changes."""
         while self._running:
             try:
+                # Check if file changed
                 if self._matcher.reload_if_changed():
+                    # Backup before reload (only if we have valid rules)
+                    if self._matcher.rule_count > 0:
+                        create_backup()
                     logger.info(
                         f"Rules reloaded: {self._matcher.rule_count} rules active"
                     )
@@ -340,3 +347,108 @@ class RuleFileWatcher:
             # Wait for poll interval or stop signal
             if self._stop_event.wait(timeout=self._poll_interval):
                 break  # Stop signal received
+
+
+# =============================================================================
+# Backup and Restore Functions
+# =============================================================================
+
+def get_backup_path() -> Path:
+    """Get the path to the rules backup file.
+
+    Returns:
+        Path to rules.txt.bak in the app folder.
+    """
+    return get_app_folder() / RULES_BACKUP_NAME
+
+
+def backup_exists() -> bool:
+    """Check if a rules backup file exists.
+
+    Returns:
+        True if backup exists, False otherwise.
+    """
+    return get_backup_path().exists()
+
+
+def create_backup() -> bool:
+    """Create a backup of the current rules file.
+
+    Only creates backup if rules file exists and has valid rules.
+
+    Returns:
+        True if backup created, False otherwise.
+    """
+    rules_path = get_rules_path()
+    backup_path = get_backup_path()
+
+    if not rules_path.exists():
+        logger.debug("No rules file to backup")
+        return False
+
+    # Verify the rules file has valid content
+    rules, errors = RuleParser.parse_file(rules_path)
+    if not rules:
+        logger.debug("Rules file is empty or invalid, skipping backup")
+        return False
+
+    try:
+        import shutil
+        shutil.copy2(rules_path, backup_path)
+        logger.info(f"Created rules backup: {backup_path}")
+        return True
+    except OSError as e:
+        logger.error(f"Failed to create rules backup: {e}")
+        return False
+
+
+def restore_from_backup() -> bool:
+    """Restore rules from backup file.
+
+    Returns:
+        True if restore successful, False otherwise.
+    """
+    rules_path = get_rules_path()
+    backup_path = get_backup_path()
+
+    if not backup_path.exists():
+        logger.error("No backup file to restore from")
+        return False
+
+    try:
+        import shutil
+        shutil.copy2(backup_path, rules_path)
+        logger.info(f"Restored rules from backup: {backup_path}")
+        return True
+    except OSError as e:
+        logger.error(f"Failed to restore rules from backup: {e}")
+        return False
+
+
+def get_backup_info() -> Optional[Dict]:
+    """Get information about the backup file.
+
+    Returns:
+        Dictionary with backup info, or None if no backup.
+    """
+    backup_path = get_backup_path()
+
+    if not backup_path.exists():
+        return None
+
+    try:
+        stat = backup_path.stat()
+        rules, _ = RuleParser.parse_file(backup_path)
+
+        from datetime import datetime
+        mtime = datetime.fromtimestamp(stat.st_mtime)
+
+        return {
+            "path": backup_path,
+            "modified": mtime,
+            "rule_count": len(rules),
+            "size_bytes": stat.st_size,
+        }
+    except Exception as e:
+        logger.error(f"Error getting backup info: {e}")
+        return None

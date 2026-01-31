@@ -110,6 +110,68 @@ Some antivirus software may flag `CustomAutocorrect.exe` as suspicious. This is 
 
 The application is open source - you can review the code or build from source.
 
+## Security Considerations
+
+This application is designed for **personal use on a single-user Windows PC**. Before installing, understand what you're getting:
+
+### What This App Does
+
+| Capability | Details |
+|------------|---------|
+| **Keystroke monitoring** | Captures ALL keystrokes system-wide via global keyboard hook |
+| **Keyboard simulation** | Sends backspace and replacement text to any application |
+| **Window detection** | Reads active window title (logged with corrections) |
+| **UI Automation** | Queries Windows accessibility API to detect password fields |
+| **File storage** | Stores rules, logs, and suggestions in your Documents folder |
+
+### Data Storage
+
+All data is stored **unencrypted** in `Documents\CustomAutocorrect\`:
+- `corrections.log` contains your typos, corrections, and which app you were using
+- `suggestions.txt` tracks words you frequently backspace-correct
+- No data is sent over the network (the app is completely offline)
+
+### Privilege Requirements
+
+- **Administrator privileges recommended** for reliable global keyboard access
+- The app runs with full user permissions while active
+- No sandboxing or privilege separation
+
+### Password Protection
+
+The app attempts to detect password fields using Windows UI Automation and will skip corrections in those fields. However, this detection is **best-effort only**:
+- Works for standard Windows password controls
+- May NOT detect: web app custom inputs, non-standard controls, some browser fields
+- If detection fails, corrections proceed (fail-open design)
+
+### Software Conflicts
+
+This app **will conflict with**:
+- Other keyboard monitoring tools (AutoHotkey, PowerToys keyboard manager)
+- Password managers that intercept typing (KeePass, 1Password, LastPass)
+- Text expanders (PhraseExpress, TextExpander)
+- Accessibility tools (screen readers like JAWS, NVDA)
+- Gaming anti-cheat software (may be flagged as input manipulation)
+
+### Not Suitable For
+
+- ❌ Enterprise/corporate environments (EDR tools will flag it)
+- ❌ Shared computers (captures ALL users' keystrokes)
+- ❌ Compliance-regulated environments (HIPAA, PCI-DSS, etc.)
+- ❌ Machines processing sensitive data
+
+### Security Posture Summary
+
+| Aspect | Status |
+|--------|--------|
+| Network connectivity | ✅ None (fully offline) |
+| Data encryption | ❌ None (plaintext files) |
+| Password exclusion | ⚠️ Best-effort only |
+| Code signing | ❌ Unsigned executable |
+| Memory protection | ❌ Standard Python objects |
+
+**Bottom line:** This is a personal productivity tool, not enterprise software. Use it on your own machine where you understand and accept these tradeoffs.
+
 ## Building from Source
 
 ### Requirements

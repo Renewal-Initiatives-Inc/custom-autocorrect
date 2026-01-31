@@ -217,6 +217,17 @@ class SystemTray:
             Menu.SEPARATOR,
             MenuItem("Open Rules File", self._on_open_rules),
             MenuItem("Open Corrections Log", self._on_open_log),
+            MenuItem(
+                "Restore Rules Backup",
+                self._on_restore_backup,
+                visible=lambda item: self._backup_exists(),
+            ),
+            Menu.SEPARATOR,
+            MenuItem(
+                "Start with Windows",
+                self._on_toggle_startup,
+                checked=lambda item: self._is_startup_enabled(),
+            ),
             Menu.SEPARATOR,
             MenuItem("Exit", self._on_exit),
         )
@@ -318,6 +329,93 @@ class SystemTray:
 
         _open_file(path)
 
+    def _is_startup_enabled(self) -> bool:
+        """Check if auto-start with Windows is enabled."""
+        try:
+            from .startup import is_startup_enabled
+            return is_startup_enabled()
+        except Exception as e:
+            logger.debug(f"Error checking startup status: {e}")
+            return False
+
+    def _backup_exists(self) -> bool:
+        """Check if a rules backup exists."""
+        try:
+            from .rules import backup_exists
+            return backup_exists()
+        except Exception as e:
+            logger.debug(f"Error checking backup: {e}")
+            return False
+
+    def _on_restore_backup(self) -> None:
+        """Handle 'Restore Rules Backup' menu item click."""
+        try:
+            from .rules import get_backup_info, restore_from_backup
+
+            info = get_backup_info()
+            if not info:
+                self._show_info("No Backup", "No backup file found.")
+                return
+
+            # Confirm restore
+            msg = (
+                f"Restore rules from backup?\n\n"
+                f"Backup created: {info['modified'].strftime('%Y-%m-%d %H:%M')}\n"
+                f"Rules in backup: {info['rule_count']}\n\n"
+                f"Your current rules.txt will be replaced."
+            )
+
+            if self._confirm_action("Restore Backup", msg):
+                if restore_from_backup():
+                    self._show_info(
+                        "Backup Restored",
+                        f"Rules restored from backup.\n"
+                        f"{info['rule_count']} rules now active."
+                    )
+                else:
+                    self._show_info(
+                        "Restore Failed",
+                        "Could not restore rules from backup.\n"
+                        "Check the log for details."
+                    )
+        except Exception as e:
+            logger.error(f"Error restoring backup: {e}")
+            self._show_info("Error", f"Failed to restore backup: {e}")
+
+    def _on_toggle_startup(self) -> None:
+        """Handle 'Start with Windows' menu item click."""
+        try:
+            from .startup import is_startup_enabled, enable_startup, disable_startup
+
+            if is_startup_enabled():
+                if disable_startup():
+                    self._show_info(
+                        "Startup Disabled",
+                        "Custom Autocorrect will no longer start with Windows."
+                    )
+                else:
+                    self._show_info(
+                        "Error",
+                        "Failed to disable auto-start."
+                    )
+            else:
+                if enable_startup():
+                    self._show_info(
+                        "Startup Enabled",
+                        "Custom Autocorrect will now start automatically with Windows."
+                    )
+                else:
+                    self._show_info(
+                        "Error",
+                        "Failed to enable auto-start.\n\n"
+                        "You can manually add the app to your Startup folder:\n"
+                        "1. Press Win+R, type 'shell:startup'\n"
+                        "2. Copy CustomAutocorrect.exe to that folder"
+                    )
+        except Exception as e:
+            logger.error(f"Error toggling startup: {e}")
+            self._show_info("Error", f"Failed to toggle startup: {e}")
+
     def _on_exit(self) -> None:
         """Handle 'Exit' menu item click."""
         logger.info("Exit requested from system tray")
@@ -347,6 +445,40 @@ class SystemTray:
                 logger.warning(f"Failed to show info dialog: {e}")
 
         threading.Thread(target=show, daemon=True).start()
+
+    def _confirm_action(self, title: str, message: str) -> bool:
+        """Show a confirmation dialog.
+
+        Args:
+            title: Dialog title.
+            message: Message to display.
+
+        Returns:
+            True if user confirmed, False otherwise.
+        """
+        result = [False]
+        done_event = threading.Event()
+
+        def show() -> None:
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                result[0] = messagebox.askyesno(title, message, parent=root)
+                root.destroy()
+            except Exception as e:
+                logger.warning(f"Failed to show confirm dialog: {e}")
+            finally:
+                done_event.set()
+
+        thread = threading.Thread(target=show, daemon=True)
+        thread.start()
+        done_event.wait(timeout=60)  # 1 minute timeout
+
+        return result[0]
 
     def _show_text_dialog(self, title: str, text: str) -> None:
         """Show a dialog with scrollable text.

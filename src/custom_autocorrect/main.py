@@ -24,8 +24,9 @@ from .correction_log import log_correction
 from .hotkey import AddRuleHotkey
 from .keystroke_engine import KeystrokeEngine
 from .password_detect import is_password_field
-from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
+from .paths import ensure_app_folder, ensure_rules_file, get_rules_path, get_active_storage_info
 from .rules import RuleFileWatcher, RuleMatcher, Rule
+from .single_instance import SingleInstanceLock, show_already_running_dialog
 from .suggestions import CorrectionPatternTracker
 from .tray import SystemTray
 
@@ -35,6 +36,7 @@ _correction_engine: Optional[CorrectionEngine] = None
 _pattern_tracker: Optional[CorrectionPatternTracker] = None
 _tray: Optional[SystemTray] = None
 _hotkey: Optional[AddRuleHotkey] = None
+_instance_lock: Optional[SingleInstanceLock] = None
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -49,6 +51,50 @@ def setup_logging(debug: bool = False) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def show_error_dialog(title: str, message: str) -> None:
+    """Show an error dialog to the user.
+
+    Args:
+        title: Dialog title.
+        message: Error message to display.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        messagebox.showerror(title, message, parent=root)
+        root.destroy()
+    except Exception:
+        # Fall back to console output
+        print(f"\nERROR: {title}")
+        print(message)
+
+
+def show_warning_dialog(title: str, message: str) -> None:
+    """Show a warning dialog to the user.
+
+    Args:
+        title: Dialog title.
+        message: Warning message to display.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        messagebox.showwarning(title, message, parent=root)
+        root.destroy()
+    except Exception:
+        # Fall back to console output
+        print(f"\nWARNING: {title}")
+        print(message)
 
 
 def on_correction_pattern(erased: str, replacement: str) -> None:
@@ -123,13 +169,25 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
-    global _matcher, _correction_engine, _pattern_tracker, _tray, _hotkey
+    global _matcher, _correction_engine, _pattern_tracker, _tray, _hotkey, _instance_lock
 
     # Check for debug flag
     debug = "--debug" in sys.argv or "-d" in sys.argv
 
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
+
+    # Check for single instance
+    _instance_lock = SingleInstanceLock()
+    if not _instance_lock.acquire():
+        logger.warning("Another instance is already running")
+        show_warning_dialog(
+            "Already Running",
+            "Custom Autocorrect is already running.\n\n"
+            "Look for the pillow icon in your system tray\n"
+            "(click the ^ arrow in your taskbar if hidden)."
+        )
+        return 1
 
     print("Custom Autocorrect v1.0.0")
     print("=" * 50)
@@ -139,8 +197,24 @@ def main() -> int:
     try:
         ensure_app_folder()
         ensure_rules_file()
+
+        # Check if using fallback location
+        fallback_name, folder_path = get_active_storage_info()
+        if fallback_name:
+            print(f"Note: Using fallback storage location ({fallback_name})")
+            print(f"      Files stored in: {folder_path}")
+            print()
     except OSError as e:
+        error_msg = (
+            f"Failed to create app folder:\n{e}\n\n"
+            "Custom Autocorrect needs to store configuration files.\n\n"
+            "Solutions:\n"
+            "1. Try running as Administrator\n"
+            "2. Check folder permissions for Documents folder\n"
+            "3. Move the app to a different location"
+        )
         print(f"Error: Failed to create app folder: {e}")
+        show_error_dialog("Storage Error", error_msg)
         return 1
 
     # Load rules
@@ -153,9 +227,13 @@ def main() -> int:
     print()
 
     # Report any parse errors
-    for error in _matcher.get_parse_errors():
-        print(f"  Warning: Line {error.line_number}: {error.reason}")
-        print(f"           {error.line}")
+    parse_errors = _matcher.get_parse_errors()
+    if parse_errors:
+        print(f"  Note: {len(parse_errors)} invalid line(s) in rules.txt:")
+        for error in parse_errors[:5]:  # Show first 5
+            print(f"    Line {error.line_number}: {error.reason}")
+        if len(parse_errors) > 5:
+            print(f"    ... and {len(parse_errors) - 5} more")
 
     if rule_count == 0:
         print("Tip: Add rules to rules.txt in format: typo=correction")
@@ -228,16 +306,26 @@ def main() -> int:
             shutdown_event.wait(timeout=1.0)
 
     except ImportError as e:
+        error_msg = (
+            f"Missing required library: {e}\n\n"
+            "This application requires the 'keyboard' library.\n"
+            "Install it with: pip install keyboard\n\n"
+            "Note: On Windows, you may need to run as Administrator."
+        )
         print(f"\nError: {e}")
-        print("\nThis application requires the 'keyboard' library.")
-        print("Install it with: pip install keyboard")
-        print("\nNote: On Windows, you may need to run as Administrator.")
+        show_error_dialog("Missing Dependency", error_msg)
         return 1
 
     except PermissionError:
+        error_msg = (
+            "Permission denied for keyboard access.\n\n"
+            "Custom Autocorrect needs permission to monitor keystrokes.\n\n"
+            "Solutions:\n"
+            "1. Right-click the app and select 'Run as Administrator'\n"
+            "2. On Linux, run with sudo or add yourself to the 'input' group"
+        )
         print("\nError: Permission denied for keyboard access.")
-        print("On Windows, try running as Administrator.")
-        print("On Linux, you may need root access or to be in the 'input' group.")
+        show_error_dialog("Permission Denied", error_msg)
         return 1
 
     except KeyboardInterrupt:
@@ -256,6 +344,8 @@ def main() -> int:
             _tray.stop()
         watcher.stop()
         engine.stop()
+        if _instance_lock:
+            _instance_lock.release()
         if _correction_engine:
             print(f"Total corrections made: {_correction_engine.correction_count}")
         if _pattern_tracker and _pattern_tracker.suggestion_count > 0:

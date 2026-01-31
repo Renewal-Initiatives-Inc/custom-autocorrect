@@ -108,6 +108,99 @@ SAMPLE_RULES_CONTENT = """\
 # waht=what
 """
 
+# Track which fallback location is being used (None = primary)
+_active_fallback: Optional[str] = None
+
+
+def test_write_permission(folder: Path) -> bool:
+    """Test if a folder is writable.
+
+    Creates and removes a temporary file to verify write access.
+
+    Args:
+        folder: Path to test.
+
+    Returns:
+        True if writable, False otherwise.
+    """
+    if not folder.exists():
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
+
+    test_file = folder / ".write_test"
+    try:
+        test_file.write_text("test", encoding="utf-8")
+        test_file.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def get_fallback_locations() -> list[tuple[str, Path]]:
+    """Get ordered list of fallback storage locations.
+
+    Returns:
+        List of (name, path) tuples in priority order.
+    """
+    locations = []
+
+    # 1. Primary: Documents folder
+    docs = get_documents_folder()
+    if docs:
+        locations.append(("Documents", docs / APP_FOLDER_NAME))
+
+    # 2. LOCALAPPDATA (Windows app data)
+    localappdata = os.environ.get("LOCALAPPDATA")
+    if localappdata:
+        locations.append(("LocalAppData", Path(localappdata) / APP_FOLDER_NAME))
+
+    # 3. APPDATA (Roaming, synced in some enterprise environments)
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        locations.append(("AppData", Path(appdata) / APP_FOLDER_NAME))
+
+    # 4. User home directory
+    locations.append(("Home", Path.home() / APP_FOLDER_NAME))
+
+    # 5. Current directory (last resort, may be read-only)
+    locations.append(("Current", Path.cwd() / APP_FOLDER_NAME))
+
+    return locations
+
+
+def find_writable_location() -> Optional[tuple[str, Path]]:
+    """Find the first writable location for app storage.
+
+    Tries locations in priority order and returns the first writable one.
+
+    Returns:
+        Tuple of (location_name, path) or None if no writable location found.
+    """
+    global _active_fallback
+
+    for name, path in get_fallback_locations():
+        if test_write_permission(path):
+            if name != "Documents":
+                _active_fallback = name
+                logger.warning(f"Using fallback storage location: {name} ({path})")
+            else:
+                _active_fallback = None
+            return (name, path)
+
+    logger.error("No writable storage location found!")
+    return None
+
+
+def get_active_storage_info() -> tuple[Optional[str], Path]:
+    """Get information about the active storage location.
+
+    Returns:
+        Tuple of (fallback_name or None, path).
+    """
+    return (_active_fallback, get_app_folder())
+
 
 def get_documents_folder() -> Optional[Path]:
     """Get the user's Documents folder.
@@ -142,22 +235,55 @@ def get_documents_folder() -> Optional[Path]:
     return home / "Documents"
 
 
+# Cached app folder path (set after first writable location found)
+_cached_app_folder: Optional[Path] = None
+
+
 def get_app_folder() -> Path:
     """Get the CustomAutocorrect folder path.
 
-    This returns the path where the app stores its files:
-    Documents/CustomAutocorrect/
+    This returns the path where the app stores its files.
+    On first call, tries Documents/CustomAutocorrect/ and falls back
+    to alternative locations if not writable.
 
     Returns:
         Path to the app folder (may not exist yet).
     """
+    global _cached_app_folder
+
+    if _cached_app_folder is not None:
+        return _cached_app_folder
+
+    # Try primary location first (Documents)
     docs = get_documents_folder()
     if docs:
-        return docs / APP_FOLDER_NAME
+        primary = docs / APP_FOLDER_NAME
+        if test_write_permission(primary):
+            _cached_app_folder = primary
+            return primary
 
-    # Fallback: use app directory (less ideal but works)
-    logger.warning("Documents folder not found, using fallback location")
+    # Primary not writable, try fallbacks
+    result = find_writable_location()
+    if result:
+        _, path = result
+        _cached_app_folder = path
+        return path
+
+    # Last resort: return Documents anyway and let it fail later
+    logger.error("No writable location found, using Documents (may fail)")
+    if docs:
+        return docs / APP_FOLDER_NAME
     return Path.home() / APP_FOLDER_NAME
+
+
+def reset_app_folder_cache() -> None:
+    """Reset the cached app folder path.
+
+    Useful for testing or when storage location needs to be re-evaluated.
+    """
+    global _cached_app_folder, _active_fallback
+    _cached_app_folder = None
+    _active_fallback = None
 
 
 def get_rules_path() -> Path:
@@ -188,23 +314,39 @@ def get_custom_words_path() -> Path:
 def ensure_app_folder() -> Path:
     """Create the app folder if it doesn't exist.
 
+    This function will try fallback locations if the primary location
+    is not writable.
+
     Returns:
         Path to the created/existing folder.
 
     Raises:
-        OSError: If folder cannot be created.
+        OSError: If no writable folder can be created.
     """
     folder = get_app_folder()
 
-    if not folder.exists():
-        try:
-            folder.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Created app folder: {folder}")
-        except OSError as e:
-            logger.error(f"Failed to create app folder {folder}: {e}")
-            raise
+    if folder.exists():
+        return folder
 
-    return folder
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created app folder: {folder}")
+        return folder
+    except OSError as e:
+        logger.warning(f"Failed to create primary app folder {folder}: {e}")
+
+        # Try fallback locations
+        result = find_writable_location()
+        if result:
+            name, path = result
+            if not path.exists():
+                path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Using fallback folder ({name}): {path}")
+            return path
+
+        # No fallback worked
+        logger.error("Cannot create app folder in any location")
+        raise OSError(f"Cannot create app folder: {e}")
 
 
 def ensure_rules_file() -> Path:

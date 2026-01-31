@@ -10,7 +10,16 @@ __author__ = "Jeff Takle"
 
 from .word_buffer import WordBuffer
 from .keystroke_engine import KeystrokeEngine
-from .rules import Rule, RuleParser, RuleMatcher, RuleFileWatcher
+from .rules import (
+    Rule,
+    RuleParser,
+    RuleMatcher,
+    RuleFileWatcher,
+    backup_exists,
+    create_backup,
+    restore_from_backup,
+    get_backup_info,
+)
 from .correction import (
     CorrectionEngine,
     apply_casing,
@@ -31,6 +40,17 @@ from .suggestions import (
     SuggestionsFile,
     SUGGESTION_THRESHOLD,
 )
+from .single_instance import (
+    SingleInstanceLock,
+    is_another_instance_running,
+    show_already_running_dialog,
+)
+from .startup import (
+    is_startup_enabled,
+    enable_startup,
+    disable_startup,
+    toggle_startup,
+)
 
 __all__ = [
     "WordBuffer",
@@ -39,6 +59,10 @@ __all__ = [
     "RuleParser",
     "RuleMatcher",
     "RuleFileWatcher",
+    "backup_exists",
+    "create_backup",
+    "restore_from_backup",
+    "get_backup_info",
     "CorrectionEngine",
     "apply_casing",
     "detect_casing_pattern",
@@ -54,4 +78,11 @@ __all__ = [
     "IgnoreList",
     "SuggestionsFile",
     "SUGGESTION_THRESHOLD",
+    "SingleInstanceLock",
+    "is_another_instance_running",
+    "show_already_running_dialog",
+    "is_startup_enabled",
+    "enable_startup",
+    "disable_startup",
+    "toggle_startup",
 ]

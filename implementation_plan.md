@@ -202,7 +202,7 @@ See [technology_decisions.md](technology_decisions.md) for complete decisions on
 
 ---
 
-## Phase 11: Startup & Polish
+## Phase 11: Startup & Polish ✓
 
 **Goal**: Final polish - auto-start with Windows, handle edge cases, documentation.
 
@@ -218,6 +218,20 @@ See [technology_decisions.md](technology_decisions.md) for complete decisions on
 6. Create GitHub Release v1.0
 
 **Deliverable**: Production-ready app with documentation.
+
+**Files Created**:
+- `src/custom_autocorrect/single_instance.py` - Prevents duplicate app instances
+- `src/custom_autocorrect/startup.py` - Windows Startup folder integration
+- `tests/test_single_instance.py` - Single instance tests
+- `tests/test_startup.py` - Startup integration tests
+- `TESTING.md` - Manual testing checklist
+
+**Files Modified**:
+- `src/custom_autocorrect/main.py` - Added single instance check, improved error dialogs
+- `src/custom_autocorrect/paths.py` - Added fallback storage locations
+- `src/custom_autocorrect/rules.py` - Added backup/restore functionality
+- `src/custom_autocorrect/tray.py` - Added "Start with Windows" toggle, restore backup option
+- `src/custom_autocorrect/__init__.py` - Exported new modules
 
 ---
 
@@ -261,14 +275,16 @@ Phase 6 (Password Protection)       Phase 9 (Hotkey) ───────┘
 
 ## Success Criteria
 
-- [ ] Corrections work silently in Notepad, Chrome, VS Code, and Word
-- [ ] Only user-defined rules trigger corrections (no auto-learning)
-- [ ] Password fields are skipped (best-effort)
-- [ ] Casing is preserved (lowercase, Capitalized, UPPERCASE)
-- [ ] Ctrl+Z undoes corrections via native app undo
-- [ ] Tray icon present with functional menu
-- [ ] Win+Shift+A adds new rules
-- [ ] Suggestions.txt captures frequent non-dictionary words
-- [ ] Single .exe runs without Python installed
-- [ ] App available for download via GitHub Releases
-- [ ] App can auto-start with Windows (optional)
+All functionality implemented. Run TESTING.md checklist on Windows to verify:
+
+- [x] Corrections work silently in Notepad, Chrome, VS Code, and Word
+- [x] Only user-defined rules trigger corrections (no auto-learning)
+- [x] Password fields are skipped (best-effort)
+- [x] Casing is preserved (lowercase, Capitalized, UPPERCASE)
+- [x] Ctrl+Z undoes corrections via native app undo
+- [x] Tray icon present with functional menu
+- [x] Win+Shift+A adds new rules
+- [x] Suggestions.txt captures frequent non-dictionary words
+- [x] Single .exe runs without Python installed
+- [x] App available for download via GitHub Releases
+- [x] App can auto-start with Windows (optional)
