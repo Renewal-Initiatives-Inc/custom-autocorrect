@@ -7,3 +7,8 @@ corrections via backspace+retype, and passively tracks potential typos for user 
 
 __version__ = "0.1.0"
 __author__ = "Jeff Takle"
+
+from .word_buffer import WordBuffer
+from .keystroke_engine import KeystrokeEngine
+
+__all__ = ["WordBuffer", "KeystrokeEngine"]

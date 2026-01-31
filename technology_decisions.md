@@ -114,3 +114,47 @@ This document records technology choices made during project planning. Each deci
 4. Other machines download from Releases page
 
 ---
+
+### Decision 5: Keyboard Hook Library
+**Choice**: `keyboard` library for keystroke capture
+
+**Date**: 2026-01-31
+
+**Options Considered**:
+| Criterion | keyboard | pynput |
+|-----------|----------|--------|
+| API simplicity | Simple, hook-based | More verbose, listener-based |
+| Key name handling | Returns actual character (case-preserved) | Requires extra handling for shift |
+| Global hotkey support | Built-in `keyboard.add_hotkey()` | Manual implementation needed |
+| Suppress/block keys | Yes (`suppress=True`) | Yes |
+| Active maintenance | Actively maintained | Actively maintained |
+
+**Rationale**: The `keyboard` library provides a simpler API for our use case:
+1. Single `keyboard.hook()` call captures all keystrokes
+2. Key events include the actual character (with Shift already applied)
+3. Built-in hotkey support for Win+Shift+A (Phase 9)
+4. Simpler unhook mechanism
+
+**Implementation Details**:
+- Use `keyboard.hook(callback, suppress=False)` for monitoring
+- Only process `event_type == "down"` to avoid duplicates
+- Key names are lowercase for special keys, actual character for printable keys
+
+**Key Tradeoffs Accepted**:
+- Both libraries require admin/root on most systems
+- `keyboard` has a larger API surface (more features we won't use)
+
+**Code Pattern**:
+```python
+import keyboard
+
+def on_key(event):
+    if event.event_type == "down":
+        # event.name is the character or key name
+        process_key(event.name)
+
+hook = keyboard.hook(on_key, suppress=False)
+# Later: keyboard.unhook(hook)
+```
+
+---
