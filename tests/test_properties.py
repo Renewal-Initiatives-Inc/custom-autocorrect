@@ -607,3 +607,83 @@ class TestLogRotationCP5:
         assert len(rotated) == max_entries
         # Should have the newest entries
         assert rotated == entries[-max_entries:]
+
+
+class TestPasswordFieldSafetyCP7:
+    """Property-based tests for CP7: Password Field Safety.
+
+    For any detected password field, no correction shall occur.
+    """
+
+    @given(word_text)
+    def test_no_correction_in_password_field(self, word: str):
+        """CP7: When password field detected, correction is never called."""
+        from unittest.mock import patch, MagicMock
+        from custom_autocorrect.main import on_word_detected
+        from custom_autocorrect.rules import Rule
+
+        with patch("custom_autocorrect.main.is_password_field", return_value=True):
+            with patch("custom_autocorrect.main._correction_engine") as mock_engine:
+                with patch("custom_autocorrect.main._matcher") as mock_matcher:
+                    # Set up matcher to return a rule (would trigger correction)
+                    mock_matcher.match.return_value = Rule(word.lower(), "corrected", word.lower())
+                    mock_engine.correct = MagicMock()
+
+                    # Call with the word
+                    on_word_detected(word)
+
+                    # Correction should NOT have been called
+                    mock_engine.correct.assert_not_called()
+
+    @given(word_text)
+    def test_is_password_field_always_returns_bool(self, word: str):
+        """CP7: is_password_field always returns a boolean, never raises."""
+        from custom_autocorrect.password_detect import is_password_field, reset_uia_cache
+
+        # Reset cache to ensure fresh test
+        reset_uia_cache()
+
+        result = is_password_field()
+        assert isinstance(result, bool)
+
+    @given(word_text)
+    def test_correction_proceeds_when_not_password_field(self, word: str):
+        """CP7: When not a password field, normal correction flow proceeds."""
+        from unittest.mock import patch, MagicMock
+        from custom_autocorrect.main import on_word_detected
+        from custom_autocorrect.rules import Rule
+
+        with patch("custom_autocorrect.main.is_password_field", return_value=False):
+            with patch("custom_autocorrect.main._correction_engine") as mock_engine:
+                with patch("custom_autocorrect.main._matcher") as mock_matcher:
+                    with patch("custom_autocorrect.main.log_correction"):
+                        # Set up matcher to return a rule
+                        mock_matcher.match.return_value = Rule(word.lower(), "corrected", word.lower())
+                        mock_engine.correct.return_value = True
+
+                        # Call with the word
+                        on_word_detected(word)
+
+                        # Correction SHOULD have been called
+                        mock_engine.correct.assert_called_once()
+
+    @given(st.sampled_from([
+        Exception("Generic error"),
+        RuntimeError("Runtime error"),
+        OSError("OS error"),
+        AttributeError("Attribute error"),
+    ]))
+    def test_password_detection_error_allows_correction(self, error: Exception):
+        """CP7: Password detection error should allow corrections (fail-safe)."""
+        from unittest.mock import patch
+        from custom_autocorrect.password_detect import is_password_field, reset_uia_cache
+
+        reset_uia_cache()
+
+        with patch(
+            "custom_autocorrect.password_detect._get_focused_element",
+            side_effect=error
+        ):
+            # Should return False (not True which would block corrections)
+            result = is_password_field()
+            assert result is False

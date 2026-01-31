@@ -10,6 +10,7 @@ Pillow>=10.0.0
 
 # Windows-specific (UI Automation for password field detection)
 pywin32>=306
+comtypes>=1.1.14
 
 # Testing
 pytest>=7.4.0

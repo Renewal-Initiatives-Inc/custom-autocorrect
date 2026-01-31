@@ -1,11 +1,10 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 5: Captures keystrokes, matches words against rules, performs corrections,
-and logs corrections to a rolling log file.
+Phase 6: Captures keystrokes, matches words against rules, performs corrections,
+logs corrections to a rolling log file, and skips password fields.
 
 This module provides the application entry point that will be expanded
 in later phases to include:
-- Password field protection (Phase 6)
 - System tray integration (Phase 8)
 """
 
@@ -16,6 +15,7 @@ from typing import Optional
 from .correction import CorrectionEngine, apply_casing
 from .correction_log import log_correction
 from .keystroke_engine import KeystrokeEngine
+from .password_detect import is_password_field
 from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
 from .rules import RuleFileWatcher, RuleMatcher, Rule
 
@@ -41,7 +41,8 @@ def setup_logging(debug: bool = False) -> None:
 def on_word_detected(word: str) -> None:
     """Callback when a word is completed (space pressed).
 
-    Phase 4: Check against correction rules and perform correction if matched.
+    Phase 6: Check for password field, then check against correction rules
+    and perform correction if matched.
 
     Args:
         word: The completed word (without trailing space).
@@ -49,6 +50,13 @@ def on_word_detected(word: str) -> None:
     global _matcher, _correction_engine
 
     if _matcher is None or _correction_engine is None:
+        return
+
+    # CP7: Password Field Safety - skip corrections in password fields
+    if is_password_field():
+        logging.getLogger(__name__).debug(
+            f"Skipped correction in password field: '{word}'"
+        )
         return
 
     rule = _matcher.match(word)
@@ -90,7 +98,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.4.0 - Phase 5")
+    print("Custom Autocorrect v0.5.0 - Phase 6")
     print("=" * 50)
     print()
 
