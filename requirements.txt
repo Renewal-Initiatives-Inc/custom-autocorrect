@@ -1,0 +1,19 @@
+# Custom Autocorrect - Python Dependencies
+
+# Core functionality - keyboard monitoring
+keyboard>=0.13.5
+pynput>=1.7.6
+
+# System tray integration
+pystray>=0.19.4
+Pillow>=10.0.0
+
+# Windows-specific (UI Automation for password field detection)
+pywin32>=306
+
+# Testing
+pytest>=7.4.0
+hypothesis>=6.82.0
+
+# Packaging
+pyinstaller>=5.13.0

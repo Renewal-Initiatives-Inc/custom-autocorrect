@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "custom-autocorrect"
+version = "0.1.0"
+description = "Silent typo correction for Windows"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Jeff Takle"}
+]
+keywords = ["autocorrect", "typo", "keyboard", "windows"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing",
+]
+dependencies = [
+    "keyboard>=0.13.5",
+    "pynput>=1.7.6",
+    "pystray>=0.19.4",
+    "Pillow>=10.0.0",
+    "pywin32>=306",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "hypothesis>=6.82.0",
+    "pyinstaller>=5.13.0",
+]
+
+[project.scripts]
+custom-autocorrect = "custom_autocorrect.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v"
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
