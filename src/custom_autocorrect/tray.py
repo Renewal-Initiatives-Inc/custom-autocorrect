@@ -42,26 +42,9 @@ def _get_bundled_icon_path() -> Optional[Path]:
     Returns:
         Path to icon.png if found, None otherwise.
     """
-    # Try importlib.resources first (Python 3.9+)
-    try:
-        import importlib.resources as pkg_resources
-
-        # For Python 3.9+, use files()
-        if hasattr(pkg_resources, "files"):
-            resources = pkg_resources.files("custom_autocorrect")
-            icon_path = resources.joinpath("resources", "icon.png")
-            if hasattr(icon_path, "is_file") and icon_path.is_file():
-                return Path(str(icon_path))
-    except (ImportError, TypeError, AttributeError):
-        pass
-
-    # Fall back to relative path from this file
-    module_dir = Path(__file__).parent
-    icon_path = module_dir.parent.parent / "resources" / "icon.png"
-    if icon_path.exists():
-        return icon_path
-
-    return None
+    # Use the centralized path helper that handles PyInstaller bundles
+    from .paths import get_icon_path
+    return get_icon_path()
 
 
 def _create_icon_image(size: int = 64) -> Image.Image:

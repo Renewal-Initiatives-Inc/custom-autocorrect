@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-autocorrect"
-version = "0.1.0"
+version = "1.0.0"
 description = "Silent typo correction for Windows"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,7 @@ dependencies = [
     "pystray>=0.19.4",
     "Pillow>=10.0.0",
     "pywin32>=306",
+    "comtypes>=1.1.14",
 ]
 
 [project.optional-dependencies]

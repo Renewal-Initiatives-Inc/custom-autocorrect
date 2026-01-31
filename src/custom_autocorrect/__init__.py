@@ -5,7 +5,7 @@ based on user-defined rules. The app monitors keystrokes system-wide, performs
 corrections via backspace+retype, and passively tracks potential typos for user review.
 """
 
-__version__ = "0.6.0"
+__version__ = "1.0.0"
 __author__ = "Jeff Takle"
 
 from .word_buffer import WordBuffer

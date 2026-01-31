@@ -43,6 +43,7 @@ htmlcov/
 # PyInstaller
 *.manifest
 *.spec
+!CustomAutocorrect.spec
 
 # Distribution
 dist/

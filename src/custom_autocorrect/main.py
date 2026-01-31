@@ -131,7 +131,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.9.0 - Phase 9")
+    print("Custom Autocorrect v1.0.0")
     print("=" * 50)
     print()
 

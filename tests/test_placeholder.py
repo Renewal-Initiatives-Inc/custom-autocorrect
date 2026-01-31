@@ -19,7 +19,7 @@ def test_python_version():
 def test_package_import():
     """Verify the custom_autocorrect package can be imported."""
     from custom_autocorrect import __version__
-    assert __version__ == "0.6.0"
+    assert __version__ == "1.0.0"
 
 
 def test_main_import():

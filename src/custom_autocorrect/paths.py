@@ -3,14 +3,17 @@
 Handles paths for:
 - Documents/CustomAutocorrect/ folder structure
 - rules.txt, suggestions.txt, corrections.log, etc.
+- Bundled resources (icon, dictionary) for PyInstaller builds
 
 This module centralizes all path handling to make it easy to:
 - Test with custom paths
 - Fall back gracefully if Documents folder isn't available
+- Access bundled resources in both development and packaged modes
 """
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +21,77 @@ logger = logging.getLogger(__name__)
 
 # Default folder name in Documents
 APP_FOLDER_NAME = "CustomAutocorrect"
+
+
+# =============================================================================
+# Bundled Resource Helpers (for PyInstaller packaging)
+# =============================================================================
+
+def is_frozen() -> bool:
+    """Check if running as a PyInstaller bundle.
+
+    Returns:
+        True if running as packaged executable, False in development.
+    """
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+
+def get_bundle_dir() -> Path:
+    """Get the base directory for bundled resources.
+
+    In development: returns the project root (parent of src/)
+    In PyInstaller bundle: returns sys._MEIPASS temp directory
+
+    Returns:
+        Path to the base directory containing resources/.
+    """
+    if is_frozen():
+        # PyInstaller extracts to a temp folder stored in sys._MEIPASS
+        return Path(sys._MEIPASS)
+    else:
+        # Development mode: go up from paths.py to project root
+        # paths.py is in src/custom_autocorrect/
+        return Path(__file__).parent.parent.parent
+
+
+def get_bundled_resource(relative_path: str) -> Optional[Path]:
+    """Get path to a bundled resource file.
+
+    Works in both development and PyInstaller bundle mode.
+
+    Args:
+        relative_path: Path relative to project root (e.g., 'resources/icon.png')
+
+    Returns:
+        Path to the resource if it exists, None otherwise.
+    """
+    resource_path = get_bundle_dir() / relative_path
+    if resource_path.exists():
+        return resource_path
+    return None
+
+
+def get_icon_path() -> Optional[Path]:
+    """Get path to the bundled tray icon.
+
+    Returns:
+        Path to icon.png if found, None otherwise.
+    """
+    return get_bundled_resource('resources/icon.png')
+
+
+def get_dictionary_path() -> Optional[Path]:
+    """Get path to the bundled dictionary file.
+
+    Returns:
+        Path to words.txt if found, None otherwise.
+    """
+    return get_bundled_resource('resources/words.txt')
+
+
+# =============================================================================
+# User Data Folder Helpers (Documents/CustomAutocorrect/)
+# =============================================================================
 
 # Sample rules.txt content for new installations
 SAMPLE_RULES_CONTENT = """\
