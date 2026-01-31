@@ -378,3 +378,132 @@ class TestWholeWordProperty:
 
         # Now we should get the complete word
         assert words == [prefix + suffix]
+
+
+# Strategy for generating alphabetic-only strings (for casing tests)
+alpha_text = st.text(
+    alphabet=st.characters(
+        whitelist_categories=["Lu", "Ll"],  # Uppercase and lowercase letters only
+        min_codepoint=65,  # Start from 'A'
+        max_codepoint=122,  # End at 'z'
+    ),
+    min_size=1,
+    max_size=20,
+).filter(lambda s: s.isalpha())
+
+
+class TestCasingPreservationCP3:
+    """Property-based tests for CP3: Casing Preservation.
+
+    For any correction where trigger has casing pattern P,
+    the correction shall have the same casing pattern P.
+
+    These tests verify the correction module's casing functions.
+    """
+
+    @given(alpha_text, alpha_text)
+    def test_lowercase_input_produces_lowercase_output(self, original: str, correction: str):
+        """CP3: lowercase input produces lowercase output."""
+        from custom_autocorrect.correction import apply_casing
+
+        lower_original = original.lower()
+        result = apply_casing(lower_original, correction)
+
+        assert result == result.lower(), f"Expected lowercase output for '{lower_original}' -> '{correction}'"
+
+    @given(alpha_text, alpha_text)
+    def test_uppercase_input_produces_uppercase_output(self, original: str, correction: str):
+        """CP3: uppercase input produces uppercase output."""
+        from custom_autocorrect.correction import apply_casing
+
+        upper_original = original.upper()
+        result = apply_casing(upper_original, correction)
+
+        assert result == result.upper(), f"Expected uppercase output for '{upper_original}' -> '{correction}'"
+
+    @given(alpha_text, alpha_text)
+    def test_capitalized_input_produces_capitalized_output(self, original: str, correction: str):
+        """CP3: capitalized input produces capitalized output."""
+        from custom_autocorrect.correction import apply_casing
+
+        cap_original = original.capitalize()
+        result = apply_casing(cap_original, correction)
+
+        # Capitalize means first letter upper, rest lower
+        assert result == result.capitalize(), f"Expected capitalized output for '{cap_original}' -> '{correction}'"
+
+    @given(alpha_text, alpha_text)
+    def test_detect_casing_pattern_consistent(self, word1: str, word2: str):
+        """detect_casing_pattern is consistent for same casing."""
+        from custom_autocorrect.correction import detect_casing_pattern
+
+        # Same casing pattern should produce same result
+        lower1 = word1.lower()
+        lower2 = word2.lower()
+        assert detect_casing_pattern(lower1) == detect_casing_pattern(lower2) == "lowercase"
+
+        upper1 = word1.upper()
+        upper2 = word2.upper()
+        assert detect_casing_pattern(upper1) == detect_casing_pattern(upper2) == "uppercase"
+
+        cap1 = word1.capitalize()
+        cap2 = word2.capitalize()
+        assert detect_casing_pattern(cap1) == detect_casing_pattern(cap2) == "capitalized"
+
+    @given(alpha_text, alpha_text)
+    def test_apply_casing_never_crashes(self, original: str, correction: str):
+        """apply_casing should never raise for any alphabetic inputs."""
+        from custom_autocorrect.correction import apply_casing
+
+        # Should not raise for any input combination
+        result = apply_casing(original, correction)
+        assert isinstance(result, str)
+
+        # Also test with modified casings
+        result = apply_casing(original.lower(), correction)
+        assert isinstance(result, str)
+
+        result = apply_casing(original.upper(), correction)
+        assert isinstance(result, str)
+
+        result = apply_casing(original.capitalize(), correction)
+        assert isinstance(result, str)
+
+    @given(alpha_text, alpha_text)
+    @settings(max_examples=50)
+    def test_casing_idempotent_for_standard_patterns(self, original: str, correction: str):
+        """Applying casing twice gives same result for standard patterns."""
+        from custom_autocorrect.correction import apply_casing, detect_casing_pattern
+
+        # For standard patterns (not mixed), applying casing is idempotent
+        for transform in [str.lower, str.upper, str.capitalize]:
+            transformed_original = transform(original)
+            result1 = apply_casing(transformed_original, correction)
+            result2 = apply_casing(transformed_original, result1)
+            # Pattern should be preserved
+            assert detect_casing_pattern(result1) == detect_casing_pattern(result2)
+
+    @given(st.text(min_size=0, max_size=50))
+    def test_detect_casing_pattern_never_crashes(self, text: str):
+        """detect_casing_pattern should never raise for any input."""
+        from custom_autocorrect.correction import detect_casing_pattern
+
+        # Should not raise for any input
+        result = detect_casing_pattern(text)
+        assert result in ("lowercase", "uppercase", "capitalized", "mixed")
+
+    @given(alpha_text)
+    def test_empty_correction_returns_empty(self, original: str):
+        """Empty correction string returns empty."""
+        from custom_autocorrect.correction import apply_casing
+
+        result = apply_casing(original, "")
+        assert result == ""
+
+    @given(alpha_text)
+    def test_empty_original_returns_correction_as_is(self, correction: str):
+        """Empty original string returns correction as-is."""
+        from custom_autocorrect.correction import apply_casing
+
+        result = apply_casing("", correction)
+        assert result == correction

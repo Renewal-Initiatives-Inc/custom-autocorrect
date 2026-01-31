@@ -5,12 +5,18 @@ based on user-defined rules. The app monitors keystrokes system-wide, performs
 corrections via backspace+retype, and passively tracks potential typos for user review.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "Jeff Takle"
 
 from .word_buffer import WordBuffer
 from .keystroke_engine import KeystrokeEngine
 from .rules import Rule, RuleParser, RuleMatcher, RuleFileWatcher
+from .correction import (
+    CorrectionEngine,
+    apply_casing,
+    detect_casing_pattern,
+    perform_correction,
+)
 
 __all__ = [
     "WordBuffer",
@@ -19,4 +25,8 @@ __all__ = [
     "RuleParser",
     "RuleMatcher",
     "RuleFileWatcher",
+    "CorrectionEngine",
+    "apply_casing",
+    "detect_casing_pattern",
+    "perform_correction",
 ]

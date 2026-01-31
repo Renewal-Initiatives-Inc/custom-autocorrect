@@ -1,10 +1,9 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 3: Captures keystrokes, matches words against rules, logs potential corrections.
+Phase 4: Captures keystrokes, matches words against rules, performs corrections.
 
 This module provides the application entry point that will be expanded
 in later phases to include:
-- Correction engine (Phase 4)
 - Correction logging (Phase 5)
 - Password field protection (Phase 6)
 - System tray integration (Phase 8)
@@ -14,12 +13,14 @@ import logging
 import sys
 from typing import Optional
 
+from .correction import CorrectionEngine
 from .keystroke_engine import KeystrokeEngine
 from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
 from .rules import RuleFileWatcher, RuleMatcher, Rule
 
-# Global matcher for the word detection callback
+# Global instances for the word detection callback
 _matcher: Optional[RuleMatcher] = None
+_correction_engine: Optional[CorrectionEngine] = None
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -39,25 +40,31 @@ def setup_logging(debug: bool = False) -> None:
 def on_word_detected(word: str) -> None:
     """Callback when a word is completed (space pressed).
 
-    Phase 3: Check against correction rules and log matches.
-    Phase 4: Will actually perform the correction.
+    Phase 4: Check against correction rules and perform correction if matched.
 
     Args:
         word: The completed word (without trailing space).
     """
-    global _matcher
+    global _matcher, _correction_engine
 
-    if _matcher is None:
+    if _matcher is None or _correction_engine is None:
         return
 
     rule = _matcher.match(word)
 
     if rule:
-        # Phase 3: Log that we would correct (actual correction in Phase 4)
-        print(f"Would correct: '{word}' -> '{rule.correction}'")
-        logging.getLogger(__name__).info(
-            f"Match found: '{word}' -> '{rule.correction}' (rule: {rule.original_typo})"
-        )
+        # Phase 4: Perform the actual correction
+        success = _correction_engine.correct(word, rule.correction)
+
+        if success:
+            logging.getLogger(__name__).info(
+                f"Corrected: '{word}' -> '{rule.correction}' "
+                f"(count: {_correction_engine.correction_count})"
+            )
+        else:
+            logging.getLogger(__name__).warning(
+                f"Failed to correct: '{word}' -> '{rule.correction}'"
+            )
     else:
         # Debug logging for non-matches
         logging.getLogger(__name__).debug(f"No rule match for: '{word}'")
@@ -69,7 +76,7 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
-    global _matcher
+    global _matcher, _correction_engine
 
     # Check for debug flag
     debug = "--debug" in sys.argv or "-d" in sys.argv
@@ -77,7 +84,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.2.0 - Phase 3")
+    print("Custom Autocorrect v0.3.0 - Phase 4")
     print("=" * 50)
     print()
 
@@ -108,8 +115,11 @@ def main() -> int:
         print("     Example: teh=the")
     print()
 
+    # Phase 4: Initialize correction engine
+    _correction_engine = CorrectionEngine(delay_ms=0)
+
     print("Monitoring keystrokes...")
-    print("Type a word that matches a rule + SPACE to see it detected.")
+    print("Corrections are now ACTIVE - typos will be replaced automatically.")
     print()
     print("Press Ctrl+C to exit.")
     print("-" * 50)
@@ -154,6 +164,8 @@ def main() -> int:
     finally:
         watcher.stop()
         engine.stop()
+        if _correction_engine:
+            print(f"Total corrections made: {_correction_engine.correction_count}")
         print("Custom Autocorrect stopped. Goodbye!")
 
     return 0
