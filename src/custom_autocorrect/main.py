@@ -1,10 +1,10 @@
 """Main entry point for Custom Autocorrect.
 
-Phase 4: Captures keystrokes, matches words against rules, performs corrections.
+Phase 5: Captures keystrokes, matches words against rules, performs corrections,
+and logs corrections to a rolling log file.
 
 This module provides the application entry point that will be expanded
 in later phases to include:
-- Correction logging (Phase 5)
 - Password field protection (Phase 6)
 - System tray integration (Phase 8)
 """
@@ -13,7 +13,8 @@ import logging
 import sys
 from typing import Optional
 
-from .correction import CorrectionEngine
+from .correction import CorrectionEngine, apply_casing
+from .correction_log import log_correction
 from .keystroke_engine import KeystrokeEngine
 from .paths import ensure_app_folder, ensure_rules_file, get_rules_path
 from .rules import RuleFileWatcher, RuleMatcher, Rule
@@ -57,8 +58,13 @@ def on_word_detected(word: str) -> None:
         success = _correction_engine.correct(word, rule.correction)
 
         if success:
+            # Phase 5: Log the correction to corrections.log
+            # Apply same casing logic used in correction engine
+            cased_correction = apply_casing(word, rule.correction)
+            log_correction(word, cased_correction)
+
             logging.getLogger(__name__).info(
-                f"Corrected: '{word}' -> '{rule.correction}' "
+                f"Corrected: '{word}' -> '{cased_correction}' "
                 f"(count: {_correction_engine.correction_count})"
             )
         else:
@@ -84,7 +90,7 @@ def main() -> int:
     setup_logging(debug=debug)
     logger = logging.getLogger(__name__)
 
-    print("Custom Autocorrect v0.3.0 - Phase 4")
+    print("Custom Autocorrect v0.4.0 - Phase 5")
     print("=" * 50)
     print()
 

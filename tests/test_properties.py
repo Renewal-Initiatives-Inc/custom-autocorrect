@@ -527,3 +527,83 @@ class TestCasingPreservationCP3:
 
         result = apply_casing("", correction)
         assert result == correction
+
+
+class TestLogRotationCP5:
+    """Property-based tests for CP5: Log Rotation.
+
+    For any state of corrections.log, the file shall contain at most
+    MAX_LOG_ENTRIES entries.
+    """
+
+    @given(st.integers(min_value=0, max_value=500))
+    def test_rotation_never_exceeds_max(self, num_entries: int):
+        """CP5: Log rotation always produces <= MAX_LOG_ENTRIES."""
+        from custom_autocorrect.correction_log import rotate_log, MAX_LOG_ENTRIES
+
+        entries = [f"entry_{i}" for i in range(num_entries)]
+        rotated = rotate_log(entries)
+
+        assert len(rotated) <= MAX_LOG_ENTRIES
+
+    @given(st.lists(st.text(min_size=1, max_size=100), min_size=0, max_size=300))
+    def test_rotation_preserves_newest(self, entries: list):
+        """CP5: Rotation keeps the newest entries."""
+        from custom_autocorrect.correction_log import rotate_log, MAX_LOG_ENTRIES
+
+        rotated = rotate_log(entries)
+
+        if len(entries) > MAX_LOG_ENTRIES:
+            assert rotated == entries[-MAX_LOG_ENTRIES:]
+        else:
+            assert rotated == entries
+
+    @given(st.integers(min_value=101, max_value=500))
+    def test_large_sequences_handled(self, num_corrections: int):
+        """CP5: Simulating many corrections keeps log bounded."""
+        from custom_autocorrect.correction_log import rotate_log, MAX_LOG_ENTRIES
+
+        # Simulate num_corrections being logged one at a time
+        entries = []
+        for i in range(num_corrections):
+            entries.append(f"2026-01-31 00:00:{i:02d} | typo{i} \u2192 fix{i} | Window")
+            entries = rotate_log(entries)
+
+        assert len(entries) <= MAX_LOG_ENTRIES
+
+    @given(st.integers(min_value=0, max_value=100))
+    def test_under_limit_unchanged(self, num_entries: int):
+        """CP5: Entries at or under limit are not modified."""
+        from custom_autocorrect.correction_log import rotate_log, MAX_LOG_ENTRIES
+
+        entries = [f"entry_{i}" for i in range(num_entries)]
+        rotated = rotate_log(entries)
+
+        if num_entries <= MAX_LOG_ENTRIES:
+            assert rotated == entries
+
+    @given(st.lists(st.text(min_size=1, max_size=50), min_size=1, max_size=200))
+    def test_rotation_preserves_order(self, entries: list):
+        """CP5: Rotation preserves order of kept entries."""
+        from custom_autocorrect.correction_log import rotate_log, MAX_LOG_ENTRIES
+
+        rotated = rotate_log(entries)
+
+        # Check order is preserved (newest entries kept)
+        if len(entries) > MAX_LOG_ENTRIES:
+            expected_start = len(entries) - MAX_LOG_ENTRIES
+            for i, entry in enumerate(rotated):
+                assert entry == entries[expected_start + i]
+
+    @given(st.integers(min_value=1, max_value=50))
+    def test_custom_max_entries_respected(self, max_entries: int):
+        """CP5: Custom max_entries parameter is respected."""
+        from custom_autocorrect.correction_log import rotate_log
+
+        # Create more entries than the limit
+        entries = [f"entry_{i}" for i in range(max_entries * 2)]
+        rotated = rotate_log(entries, max_entries=max_entries)
+
+        assert len(rotated) == max_entries
+        # Should have the newest entries
+        assert rotated == entries[-max_entries:]

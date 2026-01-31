@@ -5,7 +5,7 @@ based on user-defined rules. The app monitors keystrokes system-wide, performs
 corrections via backspace+retype, and passively tracks potential typos for user review.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __author__ = "Jeff Takle"
 
 from .word_buffer import WordBuffer
@@ -16,6 +16,13 @@ from .correction import (
     apply_casing,
     detect_casing_pattern,
     perform_correction,
+)
+from .correction_log import (
+    log_correction,
+    get_active_window_title,
+    format_log_entry,
+    rotate_log,
+    MAX_LOG_ENTRIES,
 )
 
 __all__ = [
@@ -29,4 +36,9 @@ __all__ = [
     "apply_casing",
     "detect_casing_pattern",
     "perform_correction",
+    "log_correction",
+    "get_active_window_title",
+    "format_log_entry",
+    "rotate_log",
+    "MAX_LOG_ENTRIES",
 ]
